@@ -1,0 +1,62 @@
+package main
+
+import (
+	"fmt"
+	"os/exec"
+	"reflect"
+	"strconv"
+	"strings"
+	"testing"
+)
+
+func TestNoun(t *testing.T) {
+	// id, db, err := dockerDB()
+	// defer killDockerDB(id)
+	db, err := initDb("postgres", "postgres")
+	if err != nil {
+		t.Errorf("Failed to initialize database: %s", err)
+		return
+	}
+
+	n := &Noun{
+		Word:     "Gott",
+		Gender:   GenderMasculine,
+		Plural:   "Gottes",
+		Genitive: "Götter",
+
+		Defs: []Definition{"God"},
+	}
+
+	if err := SaveWord(db, n); err != nil {
+		t.Errorf("Failed to insert %s into database: %s", n.Word, err)
+	}
+
+	tn := new(Noun)
+	if err := WordFromDb(db, "Gott", tn); err != nil {
+		t.Errorf("Failed to retrieve %s from database: %s", n.Word, err)
+	}
+
+	if !reflect.DeepEqual(n, tn) {
+		t.Errorf("Differences in retrieved version: %v\n%v\n", n, tn)
+	}
+
+}
+
+func startDockerDB() (string, error) {
+	port := 5432
+	portString := strconv.Itoa(port)
+	cmd := exec.Command("docker", "run", "-d", "-p", "5432:"+portString, "postgres")
+	id, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("Failed to run docker: %s", err)
+	}
+
+	sid := strings.TrimSpace(string(id))
+	return sid, err
+
+}
+
+func killDockerDB(id string) {
+	cmd := exec.Command("docker", "kill", id)
+	cmd.Run()
+}

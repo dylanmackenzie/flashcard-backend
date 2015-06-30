@@ -1,0 +1,123 @@
+package main
+
+import (
+	"fmt"
+	"reflect"
+	"strings"
+
+	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq"
+)
+
+var schemas = map[string]string{
+	"noun": `CREATE TABLE nouns (
+		id SERIAL PRIMARY KEY,
+
+		word     text,
+		gender   smallint,
+		plural   text,
+		genitive text
+	)`,
+	"verb": `CREATE TABLE verbs (
+		id SERIAL PRIMARY KEY,
+
+		word               text,
+		present_participle text,
+		past_participle    text,
+		auxiliary          text,
+		imperative         text,
+
+		present      text,
+		preterite    text,
+		subjunctive1 text,
+		subjunctive2 text
+	)`,
+	"definition": `CREATE TABLE definitions (
+		id SERIAL PRIMARY KEY,
+		word_id integer,
+		def text
+	)`,
+}
+
+func initDb(user, dbname string) (*sqlx.DB, error) {
+	db, err := sqlx.Open("postgres", fmt.Sprintf("user=%s dbname=%s sslmode=disable", user, dbname))
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize schemas
+	for _, schema := range schemas {
+		db.MustExec(schema)
+	}
+
+	return db, nil
+}
+
+func getTableName(v interface{}) string {
+	name := reflect.TypeOf(v).Elem().Name()
+	return strings.ToLower(name) + "s"
+}
+
+func WordFromDb(db *sqlx.DB, word string, dest interface{}) error {
+	table := getTableName(dest)
+	q := "SELECT * FROM " + table + " WHERE word=$1"
+
+	return db.Get(dest, q, word)
+}
+
+func SaveWord(db *sqlx.DB, src interface{}) error {
+	var err error
+	var defs []Definition
+	var id int
+
+	switch w := src.(type) {
+	case *Noun:
+		defs = w.Defs
+		_, err = db.NamedExec(`INSERT INTO nouns (
+			word,
+			gender,
+			plural,
+			genitive
+		) VALUES (
+			:word,
+			:gender,
+			:plural,
+			:genitive
+		)`, w)
+	case *Verb:
+		defs = w.Defs
+		_, err = db.NamedExec(`INSERT INTO verbs (
+			word,
+			present_participle,
+			past_participle,
+			auxiliary,
+			imperative,
+
+			present,
+			preterite,
+			subjunctive1,
+			subjunctive2
+		) VALUES (
+			:word,
+			:present_participle,
+			:past_participle,
+			:auxiliary,
+			:imperative,
+
+			:present,
+			:preterite,
+			:subjunctive1,
+			:subjunctive2
+		)`, w)
+	default:
+		panic("Unknown type")
+	}
+
+	if err != nil {
+		return nil
+	}
+
+	for _, def := range defs {
+		SaveDef(db, def)
+	}
+}
